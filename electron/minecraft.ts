@@ -250,30 +250,67 @@ function stripSegments(segments: MotdSegment[]): string {
 }
 
 function parseStatusResponse(raw: string, ip: string, port: number, ping: number, source: string): ServerStatus {
-  const parsed = JSON.parse(raw);
-  const motdSegments = flattenJsonMotd(parsed.description);
-  const players = Array.isArray(parsed.players?.sample)
-    ? parsed.players.sample
-        .map((player: { name?: string }) => player?.name)
-        .filter((name: string | undefined): name is string => Boolean(name))
+  let parsed: unknown;
+  let parseFailed = false;
+
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = undefined;
+    parseFailed = true;
+  }
+
+  const serverObject = parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {};
+  const description = serverObject.description;
+  const motdSegments = flattenJsonMotd(
+    description !== null && (typeof description === 'string' || typeof description === 'object')
+      ? description
+      : undefined
+  );
+  const normalizedMotd = stripSegments(motdSegments) || 'Сервер ответил некорректно';
+
+  const playersSample = Array.isArray((serverObject.players as Record<string, unknown> | undefined)?.sample)
+    ? ((serverObject.players as Record<string, unknown>).sample as unknown[])
     : [];
+
+  const playerNames = playersSample
+    .filter((item): item is Record<string, unknown> => item !== null && typeof item === 'object')
+    .map((item) => item.name)
+    .filter((name): name is string => typeof name === 'string');
+
+  const playersOnline = typeof (serverObject.players as Record<string, unknown> | undefined)?.online === 'number'
+    ? ((serverObject.players as Record<string, unknown>)!.online as number)
+    : playerNames.length;
+
+  const playersMax = typeof (serverObject.players as Record<string, unknown> | undefined)?.max === 'number'
+    ? ((serverObject.players as Record<string, unknown>)!.max as number)
+    : 0;
+
+  const versionName = typeof (serverObject.version as Record<string, unknown> | undefined)?.name === 'string'
+    ? ((serverObject.version as Record<string, unknown>)!.name as string)
+    : 'Unknown';
+
+  const protocol = typeof (serverObject.version as Record<string, unknown> | undefined)?.protocol === 'number'
+    ? ((serverObject.version as Record<string, unknown>)!.protocol as number)
+    : null;
 
   return {
     ip,
     port,
-    online: true,
-    version: parsed.version?.name ?? 'Unknown',
-    protocol: typeof parsed.version?.protocol === 'number' ? parsed.version.protocol : null,
-    motd: stripSegments(motdSegments),
-    motdSegments,
-    playersOnline: typeof parsed.players?.online === 'number' ? parsed.players.online : players.length,
-    playersMax: typeof parsed.players?.max === 'number' ? parsed.players.max : 0,
-    playerNames: players,
-    favicon: typeof parsed.favicon === 'string' ? parsed.favicon : undefined,
+    online: !parseFailed,
+    version: versionName,
+    protocol,
+    motd: normalizedMotd,
+    motdSegments: motdSegments.length ? motdSegments : [{ text: normalizedMotd, color: '#ff9999' }],
+    playersOnline,
+    playersMax,
+    playerNames,
+    favicon: typeof serverObject.favicon === 'string' ? serverObject.favicon : undefined,
     ping,
     lastSeen: Date.now(),
     lastAnnouncementAt: Date.now(),
-    source
+    source,
+    error: parseFailed ? 'Invalid JSON status response' : undefined
   };
 }
 
@@ -290,7 +327,7 @@ export async function pingMinecraftServer(
     let stage: 'status' | 'ping' = 'status';
     let statusJson: string | null = null;
     let settled = false;
-    let incoming: Buffer = Buffer.alloc(0);
+    let incoming: Buffer<ArrayBufferLike> = Buffer.alloc(0);
 
     const finalize = (error?: Error) => {
       if (settled) {

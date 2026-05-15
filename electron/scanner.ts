@@ -14,6 +14,8 @@ const MULTICAST_ADDRESS = '224.0.2.60';
 const MULTICAST_PORT = 4445;
 const DEFAULT_TIMEOUT_MS = 5000;
 const RECHECK_INTERVAL_MS = 4_000;
+const MAX_CONCURRENT_PINGS = 60;
+const PING_START_DELAY_MS = 75;
 
 function emitDebug(callbacks: ScanCallbacks, entry: Omit<DebugLogEntry, 'timestamp'>): void {
   callbacks.onDebug({
@@ -100,6 +102,8 @@ function collectInterfaceAddresses(): string[] {
 export class LanScanner {
   private running = false;
 
+  private isListening = false;
+
   private stopRequested = false;
 
   private readonly callbacks: ScanCallbacks;
@@ -107,6 +111,14 @@ export class LanScanner {
   private socket: dgram.Socket | null = null;
 
   private startedAt = 0;
+
+  private activePingCount = 0;
+
+  private pingQueue: Array<() => void> = [];
+
+  private nextPingTimer: NodeJS.Timeout | null = null;
+
+  private joinedAddresses = new Set<string>();
 
   private announcementsReceived = 0;
 
@@ -155,6 +167,13 @@ export class LanScanner {
         }
 
         this.running = false;
+        this.isListening = false;
+        this.pendingPings.clear();
+        this.pingQueue = [];
+        if (this.nextPingTimer) {
+          clearTimeout(this.nextPingTimer);
+          this.nextPingTimer = null;
+        }
         this.socket = null;
 
         const payload: ScanCompletePayload = {
@@ -198,6 +217,11 @@ export class LanScanner {
 
       socket.on('error', (error) => {
         try {
+          this.leaveMemberships(socket);
+        } catch {
+          // no-op
+        }
+        try {
           socket.close();
         } catch {
           // no-op
@@ -206,6 +230,10 @@ export class LanScanner {
       });
 
       socket.on('message', (buffer, remoteInfo) => {
+        if (!this.isListening) {
+          return;
+        }
+
         const payload = buffer.toString('utf8');
         const remoteIp = remoteInfo.address;
 
@@ -254,46 +282,50 @@ export class LanScanner {
         this.pendingPings.add(serverKey);
         this.lastPingAt.set(serverKey, now);
 
-        void pingMinecraftServer(
-          remoteIp,
-          parsed.port,
-          timeoutMs,
-          'lan-multicast',
-          (entry) => this.callbacks.onDebug(entry)
-        )
-          .then((server) => {
-            const previous = this.discoveredServers.get(serverKey);
-            const merged: ServerStatus = {
-              ...server,
-              lastAnnouncementAt: previous?.lastAnnouncementAt ?? now,
-              announcedMotd: parsed.motd
-            };
+        this.enqueuePing(() => {
+          void pingMinecraftServer(
+            remoteIp,
+            parsed.port,
+            timeoutMs,
+            'lan-multicast',
+            (entry) => this.callbacks.onDebug(entry)
+          )
+            .then((server) => {
+              const previous = this.discoveredServers.get(serverKey);
+              const merged: ServerStatus = {
+                ...server,
+                lastAnnouncementAt: previous?.lastAnnouncementAt ?? now,
+                announcedMotd: parsed.motd
+              };
 
-            if (previous && serverEquals(previous, merged) && previous.lastAnnouncementAt === merged.lastAnnouncementAt) {
-              return;
-            }
+              if (previous && serverEquals(previous, merged) && previous.lastAnnouncementAt === merged.lastAnnouncementAt) {
+                return;
+              }
 
-            this.discoveredServers.set(serverKey, merged);
-            this.callbacks.onServer(merged);
-            this.callbacks.onProgress({
-              scanned: this.announcementsReceived,
-              total: this.announcementsReceived,
-              percent: 100,
-              found: this.discoveredServers.size,
-              active: 1
+              this.discoveredServers.set(serverKey, merged);
+              this.callbacks.onServer(merged);
+              this.callbacks.onProgress({
+                scanned: this.announcementsReceived,
+                total: this.announcementsReceived,
+                percent: 100,
+                found: this.discoveredServers.size,
+                active: this.activePingCount
+              });
+            })
+            .catch((error) => {
+              emitDebug(this.callbacks, {
+                scope: 'listener',
+                level: 'warn',
+                message: `Status ping failed for ${serverKey}`,
+                details: error instanceof Error ? error.message : String(error)
+              });
+            })
+            .finally(() => {
+              this.pendingPings.delete(serverKey);
+              this.activePingCount = Math.max(0, this.activePingCount - 1);
+              this.scheduleNextPing();
             });
-          })
-          .catch((error) => {
-            emitDebug(this.callbacks, {
-              scope: 'listener',
-              level: 'warn',
-              message: `Status ping failed for ${serverKey}`,
-              details: error instanceof Error ? error.message : String(error)
-            });
-          })
-          .finally(() => {
-            this.pendingPings.delete(serverKey);
-          });
+        });
       });
 
       socket.bind(MULTICAST_PORT, '0.0.0.0', () => {
@@ -313,6 +345,7 @@ export class LanScanner {
           addresses.forEach((address) => {
             try {
               socket.addMembership(MULTICAST_ADDRESS, address);
+              this.joinedAddresses.add(address);
               emitDebug(this.callbacks, {
                 scope: 'listener',
                 level: 'info',
@@ -328,14 +361,20 @@ export class LanScanner {
             }
           });
 
+          this.isListening = true;
           this.callbacks.onProgress({
             scanned: 0,
             total: 0,
             percent: 100,
             found: this.discoveredServers.size,
-            active: 1
+            active: this.activePingCount
           });
         } catch (error) {
+          try {
+            this.leaveMemberships(socket);
+          } catch {
+            // no-op
+          }
           try {
             socket.close();
           } catch {
@@ -353,14 +392,72 @@ export class LanScanner {
     });
   }
 
+  private leaveMemberships(socket: dgram.Socket): void {
+    if (!this.joinedAddresses.size) {
+      return;
+    }
+
+    this.joinedAddresses.forEach((address) => {
+      try {
+        socket.dropMembership(MULTICAST_ADDRESS, address);
+      } catch {
+        // no-op
+      }
+    });
+    this.joinedAddresses.clear();
+  }
+
+  private scheduleNextPing(): void {
+    if (!this.running || this.activePingCount >= MAX_CONCURRENT_PINGS || this.pingQueue.length === 0) {
+      return;
+    }
+
+    if (this.nextPingTimer) {
+      return;
+    }
+
+    this.nextPingTimer = setTimeout(() => {
+      this.nextPingTimer = null;
+      if (!this.running || this.activePingCount >= MAX_CONCURRENT_PINGS || this.pingQueue.length === 0) {
+        return;
+      }
+
+      const next = this.pingQueue.shift();
+      if (!next) {
+        return;
+      }
+
+      this.activePingCount += 1;
+      next();
+      this.scheduleNextPing();
+    }, PING_START_DELAY_MS);
+  }
+
+  private enqueuePing(task: () => void): void {
+    this.pingQueue.push(task);
+    this.scheduleNextPing();
+  }
+
   public stop(): void {
     this.stopRequested = true;
+    this.isListening = false;
+    this.pendingPings.clear();
+    this.pingQueue = [];
+    if (this.nextPingTimer) {
+      clearTimeout(this.nextPingTimer);
+      this.nextPingTimer = null;
+    }
     emitDebug(this.callbacks, {
       scope: 'listener',
       level: 'warn',
       message: 'Остановка прослушивания запрошена пользователем'
     });
     if (this.socket) {
+      try {
+        this.leaveMemberships(this.socket);
+      } catch {
+        // no-op
+      }
       try {
         this.socket.close();
       } catch {

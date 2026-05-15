@@ -366,6 +366,11 @@ input {
   min-height: 420px;
 }
 
+.favorites-panel {
+  background: rgba(80, 10, 10, 0.72);
+  border-color: rgba(255, 80, 80, 0.22);
+}
+
 .debug-panel {
   margin-top: 0;
 }

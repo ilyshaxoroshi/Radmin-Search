@@ -330,12 +330,13 @@ export default function App() {
   const baseVisibleServers = activeTab === 'all' ? allServers : favoriteServers;
   const normalizedServerQuery = serverSearchValue.trim().toLowerCase();
 
+  const activeTabIsFavorites = activeTab === 'favorites';
   const visibleServers = baseVisibleServers.filter((server) => {
     if (statusFilter === 'online' && !server.online) {
       return false;
     }
 
-    if (sourceFilter !== 'all' && getSourceKind(server) !== sourceFilter) {
+    if (!activeTabIsFavorites && sourceFilter !== 'all' && getSourceKind(server) !== sourceFilter) {
       return false;
     }
 
@@ -511,7 +512,7 @@ export default function App() {
         {listenerSummary ? <p className="scan-summary">{listenerSummary}</p> : null}
       </section>
 
-      <section className="panel listing-panel">
+      <section className={`panel listing-panel ${activeTabIsFavorites ? 'favorites-panel' : ''}`}>
         <div className="section-head">
           <div>
             <h2>{activeTab === 'all' ? 'Все сервера' : 'Избранные сервера'}</h2>
@@ -536,6 +537,7 @@ export default function App() {
           onStatusFilterChange={setStatusFilter}
           sourceFilter={sourceFilter}
           onSourceFilterChange={setSourceFilter}
+          showSourceFilter={!activeTabIsFavorites}
           resultCount={visibleServers.length}
         />
 

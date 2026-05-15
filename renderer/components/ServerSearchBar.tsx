@@ -8,6 +8,7 @@ interface ServerSearchBarProps {
   sourceFilter: 'all' | 'lan' | 'radmin';
   onSourceFilterChange: (value: 'all' | 'lan' | 'radmin') => void;
   resultCount: number;
+  showSourceFilter?: boolean;
 }
 
 export function ServerSearchBar({
@@ -17,7 +18,8 @@ export function ServerSearchBar({
   onStatusFilterChange,
   sourceFilter,
   onSourceFilterChange,
-  resultCount
+  resultCount,
+  showSourceFilter = true
 }: ServerSearchBarProps) {
   return (
     <div className="server-search-panel">
@@ -50,15 +52,17 @@ export function ServerSearchBar({
           <option value="online">Только онлайн</option>
         </select>
 
-        <select
-          className="filter-select"
-          value={sourceFilter}
-          onChange={(event) => onSourceFilterChange(event.target.value as 'all' | 'lan' | 'radmin')}
-        >
-          <option value="all">Все источники</option>
-          <option value="lan">LAN</option>
-          <option value="radmin">Radmin VPN</option>
-        </select>
+        {showSourceFilter ? (
+          <select
+            className="filter-select"
+            value={sourceFilter}
+            onChange={(event) => onSourceFilterChange(event.target.value as 'all' | 'lan' | 'radmin')}
+          >
+            <option value="all">Все источники</option>
+            <option value="lan">LAN</option>
+            <option value="radmin">Radmin VPN</option>
+          </select>
+        ) : null}
       </div>
 
       <div className="server-search-meta">Найдено {resultCount} сервера</div>
