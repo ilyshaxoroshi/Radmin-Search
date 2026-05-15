@@ -85,7 +85,7 @@ npm run dist
 - Скрипты запуска используют PowerShell, поэтому на Windows они работают «из коробки».
 - Для корректной работы сканера необходимо, чтобы Minecraft-серверы в локальной сети отправляли объявления по UDP multicast.
 
-![minecrafttext](images/minecrafttext.png)
+![minecraft-text](images/minecraft-text.png)
 
 ## Контакты
 
