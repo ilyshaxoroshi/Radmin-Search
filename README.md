@@ -1,8 +1,6 @@
 # LAN Scanner & Player Finder
 
-# Внимание!! тут есть один баг связанный в меню майнкрафт серверов!, листайте в самый низ для большей информации.
-
-<img src="images/lupa_zalupa.png" alt="lupa_zalupa" width="140" />
+# Внимание!! тут есть один баг связанный в меню майнкрафт серверов!, листайте в самый низ для большей информации. <img src="images/lupa_zalupa.png" alt="lupa_zalupa" width="140" />
 
 Desktop-приложение на Electron + React для поиска Minecraft-серверов в локальной сети.
 
