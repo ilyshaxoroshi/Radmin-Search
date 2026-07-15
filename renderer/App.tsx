@@ -136,6 +136,10 @@ export default function App() {
   const [listening, setListening] = useState(false);
   const [toast, setToast] = useState('');
   const [recentChanges, setRecentChanges] = useState<Record<string, number>>({});
+  const [listenerSummary, setListenerSummary] = useState('');
+  const [debugLogs, setDebugLogs] = useState<DebugLogEntry[]>([]);
+  const [hasListenerRun, setHasListenerRun] = useState(false);
+  const toastTimerRef = useRef<number | null>(null);
   const [customBg, setCustomBg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
