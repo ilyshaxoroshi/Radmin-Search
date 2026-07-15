@@ -330,8 +330,8 @@ export class LanScanner {
 
       socket.bind(MULTICAST_PORT, '0.0.0.0', () => {
         try {
-          socket.setBroadcast(true);
-          socket.setMulticastLoopback(true);
+          // socket.setBroadcast(true); // Removing this as it might interfere with Minecraft's own LAN detection
+          // socket.setMulticastLoopback(true); // Removing this might reduce interference
 
           const addresses = collectInterfaceAddresses();
           if (!addresses.length) {

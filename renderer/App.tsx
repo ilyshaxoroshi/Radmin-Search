@@ -376,14 +376,27 @@ export default function App() {
 
   const toggleFavorite = (server: ServerStatus) => {
     const key = getServerKey(server.ip, server.port);
+    console.log('Toggling favorite for:', key);
+
     setFavorites((current) => {
       const exists = current.some((entry) => getServerKey(entry.ip, entry.port) === key);
+      
+      let nextFavorites;
       if (exists) {
         showToast('Сервер удален из избранного');
-        return current.filter((entry) => getServerKey(entry.ip, entry.port) !== key);
+        nextFavorites = current.filter((entry) => getServerKey(entry.ip, entry.port) !== key);
+      } else {
+        showToast('Сервер добавлен в избранное');
+        nextFavorites = [...current, { ip: server.ip, port: server.port, addedAt: Date.now() }];
       }
-      showToast('Сервер добавлен в избранное');
-      return [...current, { ip: server.ip, port: server.port, addedAt: Date.now() }];
+      
+      try {
+        localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(nextFavorites));
+      } catch (e) {
+        console.error('Failed to save favorites to localStorage', e);
+      }
+      
+      return nextFavorites;
     });
   };
 
