@@ -158,7 +158,7 @@ export class LanScanner {
     });
 
     await new Promise<void>((resolve, reject) => {
-      const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+      const socket = dgram.createSocket({ type: 'udp4' });
       this.socket = socket;
 
       const finalize = (error?: Error) => {
@@ -328,10 +328,9 @@ export class LanScanner {
         });
       });
 
-      socket.bind(MULTICAST_PORT, '0.0.0.0', () => {
+      socket.bind(MULTICAST_PORT, () => {
         try {
-          // socket.setBroadcast(true); // Removing this as it might interfere with Minecraft's own LAN detection
-          // socket.setMulticastLoopback(true); // Removing this might reduce interference
+          socket.setBroadcast(true);
 
           const addresses = collectInterfaceAddresses();
           if (!addresses.length) {

@@ -136,10 +136,16 @@ export default function App() {
   const [listening, setListening] = useState(false);
   const [toast, setToast] = useState('');
   const [recentChanges, setRecentChanges] = useState<Record<string, number>>({});
-  const [listenerSummary, setListenerSummary] = useState('');
-  const [debugLogs, setDebugLogs] = useState<DebugLogEntry[]>([]);
-  const [hasListenerRun, setHasListenerRun] = useState(false);
-  const toastTimerRef = useRef<number | null>(null);
+  const [customBg, setCustomBg] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setCustomBg(url);
+    }
+  };
 
   useEffect(() => {
     try {
@@ -455,8 +461,22 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      {customBg && (
+        <div className="custom-background">
+          {customBg.endsWith('.mp4') ? (
+            <video src={customBg} autoPlay loop muted />
+          ) : (
+            <img src={customBg} alt="Background" />
+          )}
+        </div>
+      )}
       <div className="background-orb orb-left" />
       <div className="background-orb orb-right" />
+
+      <button className="bg-change-button" type="button" onClick={() => fileInputRef.current?.click()}>
+        Поменять фон
+      </button>
+      <input type="file" ref={fileInputRef} onChange={handleFileChange} style={{ display: 'none' }} accept="image/*,video/mp4" />
 
       <header className="hero-panel">
         <div className="hero-copy">
